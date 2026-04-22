@@ -1,0 +1,833 @@
+<!DOCTYPE html>
+<!-- 
+  版权所有 © Yuia 
+  声明：本项目仅供参考学习，私自使用造成财产损失和法律责任与原作者无关。
+-->
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OBS 直播弹幕模拟器 (精简版)</title>
+
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/framer-motion@11.0.8/dist/framer-motion.js"></script>
+
+    <style>
+        body {
+            font-family: "Microsoft YaHei UI Light", "Microsoft YaHei UI", "微软雅黑", "Segoe UI", system-ui, sans-serif;
+            font-weight: 300;
+            -webkit-font-smoothing: antialiased;
+            overflow: hidden;
+            margin: 0;
+            padding: 0;
+            background-color: transparent;
+        }
+
+        .scrollbar-none::-webkit-scrollbar {
+            display: none;
+        }
+
+        .scrollbar-none {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+
+        /* 图片中的暗色胶囊气泡 */
+        .msg-bubble {
+            background: rgba(0, 0, 0, 0.6);
+            border-radius: 9999px;
+            padding: 2px 10px;
+            line-height: 1.4;
+            display: inline-flex;
+            align-items: center;
+        }
+
+        /* 正在去购买样式 */
+        .buy-bubble {
+            /* 背景：不透明版本 */
+            /* background: linear-gradient(90deg, #f75936 0%, #ee744d 100%); */
+
+            /* 背景：透明版本 (90% 不透明度) */
+            background: linear-gradient(90deg, rgba(247, 89, 54, 1) 0%, rgba(238, 116, 77, 0.9) 100%);
+
+            border-radius: 9999px;
+            padding: 4px 14px;
+            display: inline-flex;
+            align-items: center;
+            /* box-shadow: 0 4px 12px rgba(247, 89, 54, 0.2); */
+            color: white;
+            white-space: nowrap;
+        }
+
+        /* 等级勋章样式 */
+        .level-badge {
+            background: rgba(255, 255, 255, 0.5);
+            color: #ffffff;
+            font-size: 0.75em;
+            padding: 1px 6px; /* 使用 padding 代替固定高度，使其随字号缩放 */
+            border-radius: 999px;
+            margin-right: 6px;
+            font-weight: 900;
+            display: flex;
+            align-items: center;
+        }
+
+        /* 粉丝勋章样式 */
+        .fans-badge {
+            background: rgba(255, 255, 255, 0.5);
+            color: white;
+            font-size: 0.75em;
+            padding: 1px 6px; /* 使用 padding 代替固定高度，使其随字号缩放 */
+            border-radius: 999px;
+            margin-right: 6px;
+            font-weight: normal;
+            display: flex;
+            align-items: center;
+            white-space: nowrap;
+        }
+
+        /* 设置按钮常驻半透明，悬浮时高亮 */
+        #settings-trigger {
+            opacity: 0.2;
+            transition: all 0.3s;
+        }
+
+        #settings-trigger:hover {
+            opacity: 1;
+        }
+
+        /* 现代设置面板样式 */
+        .glass-panel {
+            background: rgba(24, 24, 27, 0.85);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+        }
+
+        .setting-card {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 16px;
+            padding: 16px;
+            transition: all 0.2s;
+        }
+
+        .setting-card:hover {
+            background: rgba(255, 255, 255, 0.05);
+            border-color: rgba(255, 255, 255, 0.1);
+        }
+
+        /* 自定义滑块样式 */
+        input[type="range"] {
+            -webkit-appearance: none;
+            height: 4px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 2px;
+            outline: none;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 16px;
+            height: 16px;
+            background: #fff;
+            border-radius: 50%;
+            cursor: pointer;
+            box-shadow: 0 0 10px rgba(0,0,0,0.5);
+            transition: all 0.2s;
+        }
+
+        input[type="range"]::-webkit-slider-thumb:hover {
+            transform: scale(1.2);
+            box-shadow: 0 0 15px rgba(255,255,255,0.3);
+        }
+
+        .tab-btn {
+            position: relative;
+            padding: 8px 16px;
+            font-size: 13px;
+            font-weight: 600;
+            color: rgba(255, 255, 255, 0.5);
+            transition: all 0.2s;
+        }
+
+        .tab-btn.active {
+            color: #fff;
+        }
+
+        .tab-btn.active::after {
+            content: '';
+            position: absolute;
+            bottom: -8px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 20px;
+            height: 2px;
+            background: #fff;
+            border-radius: 1px;
+        }
+    </style>
+</head>
+
+<body class="bg-transparent">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+        const { motion, AnimatePresence } = window.Motion;
+
+        const SETTINGS_KEY = 'obs_chat_v4_strict_image';
+        const DEFAULT_SETTINGS = {
+            bgColor: 'transparent',
+            textColor: '#ffffff',
+            usernameColor: '#ffffff',
+            fontSize: 15,
+            messageSpeed: 1800,
+            showFollow: true,
+            showLike: true,
+            showOrder: true,
+            showComment: true,
+            showBuying: true,      // 是否显示正在购买
+            buyingProb: 0.2,       // 购买消息触发概率
+            maxMessages: 40,
+            freqMode: 'fixed', // 'fixed' 或 'random'
+            randomCountMin: 10,
+            randomCountMax: 30,
+            randomWindowMin: 30,
+            randomWindowMax: 120,
+            messageLifetime: 15, // 弹幕留存时间（秒）
+            containerWidth: 350,  // 区域宽度 (px)
+            maskHeight: 15,      // 顶部渐隐高度 (%)
+            productText: '1号商品', // 默认商品文本
+        };
+
+        const EMOJIS = [
+            '🍒', '🍃', '🍎', '🍓', '🍀', '✨', '💰', '🎉', '❤️', '⭐', '💎', '🏆', '🥳', 
+            '🐶', '🐱', '🐰', '🦊', '🐼', '🐨', '🐣', '🦄', '🦁', '🐱‍👤', '🐮', '🐷', '🐸', '🐹', '🐭', '🐨', '🐯', '🐻',
+            '🍦', '🍧', '🍨', '🍩', '🍪', '🎂', '🍰', '🧁', '🥧', '🍫', '🍬', '🍭', '🍮', '🍯',
+            '🍗', '🍖', '🌭', '🍔', '🍟', '🍕', '🥪', '🥙', '🌮', '🌯', '🥗', '🥘', '🍲', '🥣',
+            '🍤', '🍣', '🍱', '🥟', '🍢', '🍙', '🍚', '🍛', '🍜', '🍝', '🍠', '🍢', '🍣', '🍤'
+        ];
+
+        const NAME_DATA = [
+            // --- 中文姓氏与高频网名首字 (约 200+) ---
+            '王', '李', '张', '刘', '陈', '杨', '黄', '赵', '周', '吴', '徐', '孙', '马', '朱', '胡', '林', '郭', '何', '高', '罗',
+            '郑', '谢', '韩', '唐', '冯', '于', '董', '萧', '程', '曹', '袁', '邓', '许', '傅', '沈', '曾', '彭', '吕', '苏', '卢',
+            '蒋', '蔡', '贾', '丁', '魏', '薛', '叶', '阎', '余', '潘', '杜', '戴', '夏', '钟', '汪', '田', '任', '姜', '范', '方',
+            '石', '姚', '谭', '廖', '邹', '熊', '金', '陆', '郝', '孔', '白', '崔', '康', '毛', '邱', '秦', '江', '史', '顾', '侯',
+            '邵', '孟', '龙', '万', '段', '漕', '钱', '汤', '尹', '黎', '易', '常', '武', '乔', '贺', '赖', '龚', '文', '庞', '樊',
+            '兰', '殷', '施', '陶', '洪', '翟', '安', '颜', '倪', '严', '牛', '温', '芦', '季', '俞', '章', '鲁', '葛', '伍', '韦',
+            '梓', '轩', '雨', '子', '梦', '晴', '影', '蓝', '墨', '浅', '沫', '语', '兮', '雅', '静', '若', '微', '笑', '冷', '傲',
+            '苏', '落', '夜', '星', '月', '云', '天', '雪', '风', '花', '夏', '秋', '冬', '春', '清', '溪', '尘', '陌', '离', '忧',
+            '浅', '静', '安', '暖', '夕', '晨', '暮', '初', '旧', '念', '顾', '北', '南', '西', '东', '左', '右', '上', '下', '中',
+            '喵', '萌', '呆', '憨', '酷', '帅', '狂', '霸', '拽', '叼', '狠', '邪', '魅', '仙', '魔', '鬼', '神', '妖', '僧', '道',
+
+            // --- 英文字母 (A-Z, a-z) ---
+            'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z',
+            'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+
+            // --- 日语 (平假名 & 片假名) ---
+            'あ', 'い', 'う', 'え', 'お', 'か', 'き', 'く', 'け', 'こ', 'さ', 'し', 'す', 'せ', 'そ', 'た', 'ち', 'つ', 'て', 'と',
+            'な', 'に', 'ぬ', 'ね', 'の', 'は', 'ひ', 'ふ', 'へ', 'ほ', 'ま', 'み', 'む', 'め', 'も', 'や', 'ゆ', 'よ', 'ら', 'り',
+            'ア', 'イ', 'ウ', 'エ', 'オ', 'カ', 'キ', 'ク', 'ケ', 'コ', 'サ', 'シ', 'ス', 'セ', 'ソ', 'タ', 'チ', 'ツ', 'テ', 'ト',
+
+            // --- 韩语 ---
+            '가', '나', '다', '라', '마', '바', '사', '아', '자', '차', '카', '타', '파', '하', '우', '이', '에', '오', '유', '예',
+            '김', '이', '박', '최', '정', '강', '조', '윤', '장', '임', '한', '오', '서', '신', '권', '황', '안', '송', '전', '홍',
+
+            // --- 泰语 ---
+            'ก', 'ข', 'ค', 'ง', 'จ', 'ฉ', 'ช', 'ซ', 'ญ', 'ฎ', 'ฏ', 'ฐ', 'ฑ', 'ฒ', 'ณ', 'ด', 'ต', 'ถ', 'ท', 'น', 'บ', 'ป', 'ผ', 'ฝ', 'พ', 'ฟ',
+
+            // --- 俄语 ---
+            'А', 'Б', 'В', 'Г', 'Д', 'Е', 'Ё', 'Ж', 'З', 'И', 'Й', 'К', 'Л', 'М', 'Н', 'О', 'П', 'Р', 'С', 'Т', 'У', 'Ф', 'Х', 'Ц', 'Ч', 'Ш',
+
+            // --- 希腊语 ---
+            'α', 'β', 'γ', 'δ', 'ε', 'ζ', 'η', 'θ', 'ι', 'κ', 'λ', 'μ', 'ν', 'ξ', 'ο', 'π', 'ρ', 'σ', 'τ', 'υ', 'φ', 'χ', 'ψ', 'ω',
+
+            // --- 符号 & 特殊字符 (约 200+) ---
+            '@', '#', '$', '%', '^', '&', '*', '(', ')', '_', '+', '=', '-', '~', '.', '/', '?', '<', '>', '|', '\\', ':', ';', '"', '\'',
+            '!', '¡', '?', '¿', '§', '¶', '†', '‡', '•', '‣', '․', '‥', '…', '‧', '‰', '‱', '′', '″', '‴', '‵', '‶', '‷', '‸', '‹', '›',
+            '«', '»', '〈', '〉', '《', '》', '「', '」', '『', '』', '【', '】', '〔', '〕', '〖', '〗', '〘', '〙', '〚', '〛', '〜', '〝', '〞',
+            '✿', '❀', '❁', '❂', '❃', '❈', '❉', '❊', '❋', '๑', '๓', '๔', '๕', '๖', '๗', '๘', '๙', '๏', '๐', '✪', '✫', '✬', '✭', '✮', '✯',
+            '➹', '➷', '➸', '➺', '➻', '➼', '➽', '➾', '♐', '🏹', '☼', '☀', '☁', '☂', '☃', '☄', '♨', '⚡', '⛈', '✈', '✉', '✎', '✒', '✏',
+            '∑', '∏', '∐', '∑', '∫', '∬', '∭', '∮', '∯', '∰', '∇', '∆', 'ð', '∂', '∃', '∄', '∅', '∆', '∇', '∈', '∉', '∊', '∋', '∌', '∍',
+            '√', '∛', '∜', '∝', '∞', '∟', '∠', '∡', '∢', '∣', '∤', '∥', '∦', '∧', '∨', '∩', '∪', '∫', '∬', '∭', '∮', '∯', '∰', '∱', '∲',
+            '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
+            '①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨', '⑩', '⑪', '⑫', '⑬', '⑭', '⑮', '⑯', '⑰', '⑱', '⑲', '⑳',
+            'Ⅰ', 'Ⅱ', 'Ⅲ', 'Ⅳ', 'Ⅴ', 'Ⅵ', 'Ⅶ', 'Ⅷ', 'Ⅸ', 'Ⅹ', 'Ⅺ', 'Ⅻ',
+            '♈', '♉', '♊', '♋', '♌', '♍', '♎', '♏', '♐', '♑', '♒', '♓', '⛎',
+            '♠', '♣', '♥', '♦', '🃏', '🎴', '🀄', '🀅', '🀆', '🀇', '🀈', '🀉', '🀊', '🀋', '🀌', '🀍', '🀎', '🀏', '🀐', '🀑',
+            '⚡', '🔥', '💧', '🌊', '🌈', '☀', '⭐', '🌙', '🌌', '🌍', '🏔', '🌋', '🌵', '🌴', '🍁', '🍄', '🍔', '🍕', '🍺', '☕',
+            '6', '7', '8', '9', '!', '?',
+            '鄭', '謝', '韓', '唐', '馮', '于', '董', '蕭', '程', '曹', '袁', '鄧', '許', '傅', '沈', '曾', '彭', '吕', '蘇', '盧',
+            '蒋', '蔡', '賈', '丁', '魏', '薛', '葉', '閻', '余', '潘', '杜', '戴', '夏', '鍾', '汪', '田', '任', '姜', '范', '方',
+            'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z',
+            'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z'
+        ];
+
+        const MESSAGE_GROUPS = [
+            {
+                type: 'follow',
+                weight: 34,
+                phrases: ['来了', '关注了主播', '点击了链接', '查看了商品']
+            },
+            {
+                type: 'buy',
+                weight: 5,
+                phrases: ['下单了']
+            },
+            {
+                type: 'comment',
+                weight: 55,
+                phrases: [
+                    '已拍，坐等发货。', '口感怎么样？脆不脆？', '刚拍，几天能发货？',
+                    '主播一袋是多少克啊？怕不够吃。', '生产日期新鲜吗？', '买了一单，能不能多送个试吃？',
+                    '看着流口水了，几天到广东？', '关注了，这个什么口味的？', '一号链接加急发，馋哭了。',
+                    '拍啦，希望收到别碎了。', '已拍1号，坐等收货。', '拍了两份，能发同一个包裹吗？',
+                    '一号链接还有库存吗？', '已下单，是发什么快递？', '拍了，几天到江苏？',
+                    '刚进来，几号链接是爆款？', '一箱多重？一个人搬得动吗', '关注主播了，几天能到货呀',
+                    '主播，1号链接和2号有什么区别？', '已经分享直播间了，有福利吗？',
+                    '真的是现做现发的吗？', '过年能收到吗？', '买给家里老人的，求品质好点。',
+                    '主播讲解得好详细，种草了！', '家人们，这个真的可以冲！', '回购第三次了，真的很棒。',
+                    '之前买过，品质确实没话说。', '能不能再便宜点啊主播？', '错过刚才的优惠券了，还能领吗？',
+                    '主播多大岁数啦？', '求1号链接再讲一遍。', '已关注，求粉丝福利。',
+                    '这个味道偏甜还是偏咸？', '一箱里面有多少小包？', '配料表干净吗？有没有添加剂？',
+                    '主播辛苦了，喝口水。', '刚进来的，错过什么好东西了？', '支持主播，支持国货。',
+                    '看大家都在买，我也来一单。', '顺丰发货吗？', '拍了之后能改地址吗？',
+                    '这个收到需要冷藏吗？', '小孩可以吃这个吗？', '给孩子买的，安全吗？',
+                    '怎么还没弹窗啊？', '手慢无，终于抢到了！', '还有多少库存？',
+                    '主播，这个可以试吃吗？', '这个一共是多少？', '感觉很划算，先拍为敬。',
+                    '怎么买最便宜？', '之前买的还没吃完，这个又想买了。', '主播声音真好听。',
+                    '这个常温下能放多久？', '拍了，发货快的话还会回购。', '新人怎么领优惠？',
+                    '刚才下单的能加急吗？', '直播间氛围真好。', '这就是我要找的那款！',
+                    '价格很给力，主播给力！', '已经推荐给闺蜜了。', '好期待收到货的味道。', '主播，有啥赠品吗？', '主播，这个多少钱？', '主播，这个能单买吗？', '今天有优惠吗？', '主播，我是老粉了，求优惠？'
+                ]
+            },
+            {
+                type: 'order',
+                weight: 6,
+                phrases: [
+                    '已拍，加急发货！', '没抢到，主播加库存', '一号链接补了吗', '关注了，运费险有吗？',
+                    '已下单，期待快点发货', '已下两单，记得送赠品呀', '拍了拍了，什么时候发？',
+                    '已拍，核对一下订单', '已拍一号链接，麻烦快点', '拍了，关注了。',
+                    '刚下单，希望尽快安排', '已拍，一定要选个好的发货', '已下单，是顺丰吗？',
+                    '拍啦，老粉丝支持！', '已经拍了，能不能今天发？', '已拍，坐等收货。',
+                    '拍了2单，地址不一样', '已拍，麻烦检查仔细点', '拍了，谢谢主播。',
+                    '已下单，求加急处理！', '拍啦，搞快点。', '第三次买了，真的好。',
+                    '孩子爱吃，又来一单。', '家里人都说好，回购了。', '上周买的一下子吃完了，再拍一单。',
+                    '还是那个味道，继续支持。', '给爸妈也拍了一份，回购回购。', '无限回购的一款，绝了！',
+                    '老客户了，这次多给点优惠呀', '认准你家了，口感一直很稳', '对比了好几家，还是你家最正宗',
+                    '拍了，全家人都等这口呢', '之前买的送人了，自己再买一份', '群里姐妹推荐的，回购回购',
+                    '又来囤货了，主播给力', '味道没变，还是老味道，已拍', '已经是第五次下单了，品质如一'
+                ]
+            }
+        ];
+
+        function getRandomMessageData() {
+            const totalWeight = MESSAGE_GROUPS.reduce((sum, group) => sum + group.weight, 0);
+            let random = Math.random() * totalWeight;
+
+            for (const group of MESSAGE_GROUPS) {
+                if (random < group.weight) {
+                    const phrase = group.phrases[Math.floor(Math.random() * group.phrases.length)];
+                    return { type: group.type, content: phrase };
+                }
+                random -= group.weight;
+            }
+            // Fallback
+            return { type: 'comment', content: '来了' };
+        }
+
+        function generateUsername() {
+            const char = NAME_DATA[Math.floor(Math.random() * NAME_DATA.length)];
+            const stars = '*'.repeat(1 + Math.floor(Math.random() * 4)); // 至少1个，最多4个
+            return char + stars;
+        }
+
+        function generateLevel() {
+            return Math.random() < 0.1 ? Math.floor(Math.random() * 30) + 1 : null;
+        }
+
+        function generateFans() {
+            return Math.random() < 0.3;
+        }
+
+        function generateEmoji() {
+            if (Math.random() < 0.07) {
+                return EMOJIS[Math.floor(Math.random() * EMOJIS.length)];
+            }
+            return null;
+        }
+
+        const ShoppingBagIcon = ({ size }) => (
+            <svg
+                style={{ width: `${size}px`, height: `${size}px` }}
+                className="mr-2 fill-white"
+                viewBox="0 0 1024 1024"
+            >
+                <defs>
+                    <mask id="bagMask">
+                        <rect width="1024" height="1024" fill="white" />
+                        {/* 黑色部分表示在主体上镂空 */}
+                        <path d="M656.85504 215.06048a30.72 30.72 0 1 1 57.93792 20.48 215.10144 215.10144 0 0 1-405.58592 0 30.72 30.72 0 1 1 57.93792-20.48 153.66144 153.66144 0 0 0 289.71008 0z" fill="black" />
+                    </mask>
+                </defs>
+                {/* 购物袋主体 */}
+                <path d="M255.5904 61.44h512.8192a122.88 122.88 0 0 1 122.38848 111.75936l59.5968 655.36A122.88 122.88 0 0 1 828.0064 962.56H195.9936a122.88 122.88 0 0 1-122.368-134.00064l59.57632-655.36A122.88 122.88 0 0 1 255.56992 61.44z" mask="url(#bagMask)" />
+            </svg>
+        );
+
+        const LevelIcon = ({ size, level }) => {
+            if (level >= 20) {
+                return (
+                    <svg
+                        style={{ width: `${size}px`, height: `${size}px` }}
+                        className="mr-0.5 fill-current"
+                        viewBox="0 0 1024 1024"
+                        version="1.1"
+                        xmlns="http://www.w3.org/2000/svg"
+                    >
+                        <path d="M881.83 423.54C766.64 373.4 682.59 270.85 658.91 147.16 635.22 270.85 551.17 373.4 435.98 423.54c-22.41 9.76-78.22 24.77-78.22 24.77s55.8 15.01 78.22 24.77c115.19 50.14 199.24 152.69 222.93 276.38 23.68-123.69 107.74-226.24 222.92-276.38 22.41-9.76 78.22-24.77 78.22-24.77s-55.81-15.01-78.22-24.77zM406.16 683.62C337.87 653.89 288.04 593.09 274 519.76c-14.04 73.33-63.87 134.13-132.17 163.85-13.29 5.78-46.37 14.68-46.37 14.68s33.08 8.9 46.37 14.68C210.12 742.7 259.95 803.5 274 876.83c14.04-73.33 63.87-134.13 132.17-163.86 13.29-5.78 46.37-14.68 46.37-14.68s-33.09-8.89-46.38-14.67zM947.83 698.3c0 17.4-14.11 31.51-31.51 31.51s-31.51-14.11-31.51-31.51c0-17.4 14.11-31.51 31.51-31.51s31.51 14.11 31.51 31.51zM369.21 265.02c0 17.4-14.11 31.51-31.51 31.51-17.4 0-31.51-14.11-31.51-31.51 0-17.4 14.11-31.51 31.51-31.51 17.4 0.01 31.51 14.11 31.51 31.51z" fill="currentColor"></path>
+                        <path d="M95.46 448.3m-31.51 0a31.51 31.51 0 1 0 63.02 0 31.51 31.51 0 1 0-63.02 0Z" fill="currentColor"></path>
+                    </svg>
+                );
+            }
+            if (level >= 13 && level <= 19) {
+                return (
+                    <svg
+                        style={{ width: `${size}px`, height: `${size}px` }}
+                        className="mr-0.5 fill-current"
+                        viewBox="0 0 1024 1024"
+                        version="1.1"
+                        xmlns="http://www.w3.org/2000/svg"
+                    >
+                        <path d="M486.86255995 323.03345813l-80.42304988-191.31267706-117.67673602 170.91783402-191.31267706 80.43980818 170.91783405 117.676736 80.42304988 191.31267707 117.69349428-170.93459232 191.29591879-80.42304987zM925.47737223 350.6511256l-29.99734512-86.47279379-56.62627329 71.90983685-86.45603548 29.99734512 71.90983685 56.60951498 29.99734512 86.47279379 56.60951498-71.90983684 86.45603548-29.99734513zM712.36215549 637.33525021l-26.62892816 40.52155337-44.29216937 19.74126959 40.52155336 26.62892815 19.74126959 44.29216937 26.64568644-40.52155335 44.27541108-19.74126961-40.52155335-26.62892814z" fill="currentColor"></path>
+                    </svg>
+                );
+            }
+            if (level >= 7 && level <= 12) {
+                return (
+                    <svg
+                        style={{ width: `${size}px`, height: `${size}px` }}
+                        className="mr-0.5 fill-current"
+                        viewBox="0 0 1024 1024"
+                        version="1.1"
+                        xmlns="http://www.w3.org/2000/svg"
+                    >
+                        <path d="M532.8 134.464c-12.16-35.392-32-35.328-44.032 0.128l-67.84 200c-12.096 35.456-50.88 74.24-86.336 86.336L136.064 488.448c-35.456 12.032-35.52 32-0.192 44.288l197.376 68.672c35.328 12.288 74.24 51.328 86.4 86.72l68.864 200.192c12.16 35.392 31.872 35.328 43.84-0.128l67.264-199.36c11.968-35.456 50.688-74.368 86.08-86.464l201.664-69.12c35.392-12.096 35.392-31.808-0.064-43.776l-198.464-67.2c-35.456-11.968-74.432-50.688-86.592-86.08L532.8 134.464z" fill="currentColor"></path>
+                        <path d="M883.648 111.552c-3.456-10.112-9.152-10.112-12.608 0l-19.392 57.216a44.672 44.672 0 0 1-24.64 24.64l-56.704 19.264c-10.112 3.456-10.176 9.152 0 12.672l56.32 19.648a45.44 45.44 0 0 1 24.704 24.768l19.648 57.216c3.52 10.112 9.152 10.048 12.544-0.064l19.2-56.96a44.672 44.672 0 0 1 24.64-24.704l57.6-19.712c10.112-3.52 10.112-9.152 0-12.544l-56.704-19.2a44.8 44.8 0 0 1-24.768-24.576l-19.84-57.6z" fill="currentColor"></path>
+                    </svg>
+                );
+            }
+            return (
+                <svg
+                    style={{ width: `${size}px`, height: `${size}px` }}
+                    className="mr-0.5 fill-current"
+                    viewBox="0 0 1024 1024"
+                    version="1.1"
+                    xmlns="http://www.w3.org/2000/svg"
+                >
+                    <path d="M532.792 134.472c-12.176-35.376-31.984-35.336-44.008 0.096L420.88 334.592c-12.024 35.432-50.848 74.28-86.28 86.328l-198.536 67.52c-35.424 12.048-35.496 31.968-0.16 44.272l197.344 68.704c35.336 12.304 74.208 51.312 86.384 86.696l68.872 200.208c12.168 35.384 31.92 35.32 43.88-0.136l67.24-199.336c11.952-35.456 50.704-74.384 86.104-86.504l201.648-69.064c35.4-12.12 35.36-31.848-0.088-43.832L688.832 422.32c-35.448-11.992-74.416-50.744-86.592-86.12l-69.448-201.728z" fill="currentColor"></path>
+                </svg>
+            );
+        };
+
+        function MessageItem({ msg, settings }) {
+            const isFollow = msg.type === 'follow';
+            const isOrder = msg.type === 'order';
+            const isBuy = msg.type === 'buy';
+            const isSpecial = isOrder || isBuy;
+            const emojiChar = msg.emoji;
+
+            return (
+                <motion.div
+                    layout
+                    initial={{ opacity: 0, y: 5, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, height: 0, scale: 0.95, margin: 0 }}
+                    transition={{ 
+                        opacity: { duration: 0.2 },
+                        height: { duration: 0.3 },
+                        layout: { type: "spring", stiffness: 500, damping: 40 }
+                    }}
+                    className="flex items-center mb-[2px] overflow-hidden"
+                >
+                    <div className="msg-bubble" style={{ fontSize: `${settings.fontSize}px` }}>
+                        {msg.isFans && <span className="fans-badge">粉丝</span>}
+                        {msg.level && (
+                            <span className="level-badge">
+                                <LevelIcon size={settings.fontSize * 0.7} level={msg.level} />
+                                {msg.level}
+                            </span>
+                        )}
+                        {emojiChar && <span className="mr-1">{emojiChar}</span>}
+
+                        <span style={{ color: (isFollow || isSpecial) ? '#ffffff' : settings.usernameColor }} className="font-normal">
+                            {msg.username}
+                        </span>
+
+                        {(!isFollow && !isSpecial) && <span className="text-[#ccc] ml-0.5 mr-1">:</span>}
+
+                        <span className="text-white font-normal">
+                            {msg.content}
+                            {isBuy && <span style={{ color: '#ffb802', marginLeft: '4px' }}>1号商品</span>}
+                        </span>
+                    </div>
+                </motion.div>
+            );
+        }
+
+        function BuyingNotification({ msg, settings }) {
+            return (
+                <motion.div
+                    layout
+                    initial={{ x: -200, opacity: 0 }}
+                    animate={{ x: 0, opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ type: "spring", stiffness: 100, damping: 15 }}
+                    className="mb-3"
+                >
+                    <div className="buy-bubble" style={{ fontSize: `${settings.fontSize}px` }}>
+                        <ShoppingBagIcon size={settings.fontSize + 2} />
+                        <span className="font-bold mr-2">{msg.username}</span>
+                        <span className="opacity-90">正在去购买</span>
+                    </div>
+                </motion.div>
+            );
+        }
+
+        function App() {
+            const [showSettings, setShowSettings] = useState(false);
+            const [activeTab, setActiveTab] = useState('basic'); // 'basic' | 'engine'
+            const [isPlaying, setIsPlaying] = useState(true);
+            const [messages, setMessages] = useState([]);
+            const [buyingMsgs, setBuyingMsgs] = useState([]);
+            const [settings, setSettings] = useState(() => {
+                const saved = localStorage.getItem(SETTINGS_KEY);
+                return saved ? { ...DEFAULT_SETTINGS, ...JSON.parse(saved) } : DEFAULT_SETTINGS;
+            });
+
+            const scrollRef = useRef(null);
+
+            useEffect(() => {
+                localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+            }, [settings]);
+
+            useEffect(() => {
+                if (!isPlaying) return;
+
+                let timer;
+
+                const createMessage = () => {
+                    const data = getRandomMessageData();
+                    const newMessage = {
+                        ...data,
+                        username: generateUsername(),
+                        level: generateLevel(),
+                        isFans: generateFans(),
+                        emoji: generateEmoji(),
+                        timestamp: Date.now(),
+                        id: Math.random().toString(36).substr(2, 9)
+                    };
+                    setMessages(prev => [...prev, newMessage].slice(-settings.maxMessages));
+
+                    // 随机触发“正在购买”
+                    if (settings.showBuying && Math.random() < settings.buyingProb) {
+                        const buyMsg = {
+                            username: generateUsername(),
+                            id: Date.now() + Math.random()
+                        };
+                        setBuyingMsgs(prev => [...prev, buyMsg]);
+                        // 3.5秒后自动从浮层消失
+                        setTimeout(() => {
+                            setBuyingMsgs(prev => prev.filter(m => m.id !== buyMsg.id));
+                        }, 3500);
+                    }
+                };
+
+                if (settings.freqMode === 'random') {
+                    const startNewWave = () => {
+                        const count = Math.floor(Math.random() * (settings.randomCountMax - settings.randomCountMin + 1)) + settings.randomCountMin;
+                        const windowMs = (Math.floor(Math.random() * (settings.randomWindowMax - settings.randomWindowMin + 1)) + settings.randomWindowMin) * 1000;
+                        const interval = windowMs / count;
+
+                        let messagesSent = 0;
+                        const sendNext = () => {
+                            if (messagesSent < count) {
+                                createMessage();
+                                messagesSent++;
+                                // 增加一点随机抖动让间距更自然
+                                const jitter = (Math.random() * 0.4 + 0.8); // 0.8 - 1.2
+                                timer = setTimeout(sendNext, interval * jitter);
+                            } else {
+                                startNewWave();
+                            }
+                        };
+                        sendNext();
+                    };
+                    startNewWave();
+                } else {
+                    timer = setInterval(createMessage, settings.messageSpeed);
+                }
+
+                return () => {
+                    if (settings.freqMode === 'random') clearTimeout(timer);
+                    else clearInterval(timer);
+                };
+            }, [isPlaying, settings.freqMode, settings.messageSpeed, settings.maxMessages, settings.randomCountMin, settings.randomCountMax, settings.randomWindowMin, settings.randomWindowMax]);
+
+            useEffect(() => {
+                if (settings.messageLifetime === 0) return;
+                const interval = setInterval(() => {
+                    const now = Date.now();
+                    setMessages(prev => prev.filter(m => (now - m.timestamp) < settings.messageLifetime * 1000));
+                }, 1000);
+                return () => clearInterval(interval);
+            }, [settings.messageLifetime]);
+
+            useEffect(() => {
+                if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+            }, [messages]);
+
+            return (
+                <div
+                    className="min-h-screen w-full flex flex-col justify-end p-4 transition-colors duration-1000 overflow-hidden"
+                    style={{ backgroundColor: settings.bgColor === 'transparent' ? 'transparent' : settings.bgColor }}
+                    onDoubleClick={() => setShowSettings(true)}
+                >
+
+                    {/* 极其隐蔽的设置触发区 */}
+                    <div id="settings-trigger" className="fixed top-0 right-0 p-4 z-50">
+                        <button onClick={() => setShowSettings(true)} className="bg-black/40 px-3 py-1 rounded-full text-white text-[10px] font-bold tracking-tighter">
+                            系统设置 (CONFIG)
+                        </button>
+                    </div>
+
+                    <div style={{ width: `${settings.containerWidth}px` }} className="flex flex-col items-start">
+                        {/* 正在购买 独立区域 */}
+                        <div className="w-full">
+                            <AnimatePresence>
+                                {buyingMsgs.map(msg => (
+                                    <BuyingNotification key={msg.id} msg={msg} settings={settings} />
+                                ))}
+                            </AnimatePresence>
+                        </div>
+
+                        {/* 弹幕滚动区域 */}
+                        <div
+                            ref={scrollRef}
+                            className="flex flex-col items-start overflow-y-auto scrollbar-none transition-all duration-300"
+                            style={{
+                                width: '100%',
+                                maxHeight: '80vh',
+                                maskImage: `linear-gradient(to top, black ${100 - settings.maskHeight}%, transparent 100%)`,
+                                WebkitMaskImage: `linear-gradient(to top, black ${100 - settings.maskHeight}%, transparent 100%)`
+                            }}
+                        >
+                            <AnimatePresence initial={false}>
+                                {messages.map(msg => (
+                                    <MessageItem key={msg.id} msg={msg} settings={settings} />
+                                ))}
+                            </AnimatePresence>
+                        </div>
+                    </div>
+
+                    {showSettings && (
+                        <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-6 backdrop-blur-sm">
+                            <div className="glass-panel rounded-[32px] w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]">
+                                {/* 头部 */}
+                                <div className="px-8 pt-8 pb-4 flex justify-between items-center bg-white/5">
+                                    <div>
+                                        <h2 className="text-white font-black text-2xl italic uppercase tracking-tighter flex items-center gap-2">
+                                            <span className="w-8 h-8 bg-white text-black rounded-lg flex items-center justify-center not-italic">S</span>
+                                            设置面板
+                                        </h2>
+                                        <p className="text-white/40 text-[10px] font-bold uppercase tracking-widest mt-1">专业直播叠加层 Pro v4.0</p>
+                                    </div>
+                                    <button onClick={() => setShowSettings(false)} className="w-10 h-10 rounded-full bg-white/10 text-white hover:bg-white/20 transition-all flex items-center justify-center text-xl">×</button>
+                                </div>
+
+                                {/* Tab 切换 */}
+                                <div className="px-8 flex gap-4 border-b border-white/10 bg-white/5">
+                                    <button onClick={() => setActiveTab('basic')} className={`tab-btn ${activeTab === 'basic' ? 'active' : ''}`}>基础视觉</button>
+                                    <button onClick={() => setActiveTab('engine')} className={`tab-btn ${activeTab === 'engine' ? 'active' : ''}`}>模拟引擎</button>
+                                </div>
+
+                                {/* 内容区 */}
+                                <div className="p-8 overflow-y-auto scrollbar-none flex-1 space-y-6">
+                                    {activeTab === 'basic' ? (
+                                        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-300">
+                                            {/* 背景设置 */}
+                                            <div className="setting-card">
+                                                <div className="flex justify-between items-center mb-4">
+                                                    <span className="text-white/60 text-[11px] font-bold uppercase">画布背景</span>
+                                                    <div className="flex gap-2">
+                                                        <button onClick={() => setSettings({ ...settings, bgColor: '#00ff00' })} className="text-[9px] bg-green-500/20 px-2 py-1 rounded-md text-green-400 border border-green-500/20 hover:bg-green-500/30">绿幕模式</button>
+                                                        <button onClick={() => setSettings({ ...settings, bgColor: 'transparent' })} className="text-[9px] bg-blue-500/20 px-2 py-1 rounded-md text-blue-400 border border-blue-500/20 hover:bg-blue-500/30">透明模式</button>
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center gap-4">
+                                                    <div className="relative group flex-1">
+                                                        <input type="color" value={settings.bgColor === 'transparent' ? '#00ff00' : settings.bgColor} onChange={e => setSettings({ ...settings, bgColor: e.target.value })} className="w-full h-12 rounded-xl cursor-pointer bg-transparent border-none" />
+                                                        <div className="absolute inset-0 pointer-events-none rounded-xl border-2 border-white/10 group-hover:border-white/30 transition-colors"></div>
+                                                    </div>
+                                                    {settings.bgColor === 'transparent' && <span className="text-[10px] font-bold text-blue-400 border border-blue-500/30 px-2 py-1 rounded-lg bg-blue-500/10 uppercase tracking-tighter">原生透明通道已开启</span>}
+                                                </div>
+                                            </div>
+
+                                            {/* 字体与颜色 */}
+                                            <div className="grid grid-cols-2 gap-4">
+                                                <div className="setting-card">
+                                                    <div className="flex justify-between mb-3">
+                                                        <span className="text-white/60 text-[11px] font-bold uppercase">字体大小</span>
+                                                        <span className="text-white text-[11px] font-mono">{settings.fontSize}px</span>
+                                                    </div>
+                                                    <input type="range" min="12" max="24" value={settings.fontSize} onChange={e => setSettings({ ...settings, fontSize: parseInt(e.target.value) })} className="w-full" />
+                                                </div>
+                                                <div className="setting-card">
+                                                    <span className="text-white/60 text-[11px] font-bold uppercase block mb-3">用户名颜色</span>
+                                                    <div className="flex items-center gap-3">
+                                                        <input type="color" value={settings.usernameColor} onChange={e => setSettings({ ...settings, usernameColor: e.target.value })} className="w-full h-8 rounded-lg cursor-pointer bg-transparent border-none" />
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            {/* 布局 */}
+                                            <div className="setting-card space-y-4">
+                                                <div className="flex justify-between">
+                                                    <span className="text-white/60 text-[11px] font-bold uppercase">显示区域宽度</span>
+                                                    <span className="text-white text-[11px] font-mono">{settings.containerWidth}px</span>
+                                                </div>
+                                                <input type="range" min="200" max="800" value={settings.containerWidth} onChange={e => setSettings({ ...settings, containerWidth: parseInt(e.target.value) })} className="w-full" />
+                                                
+                                                <div className="flex justify-between pt-2">
+                                                    <span className="text-white/60 text-[11px] font-bold uppercase">顶部渐隐深度</span>
+                                                    <span className="text-white text-[11px] font-mono">{settings.maskHeight}%</span>
+                                                </div>
+                                                <input type="range" min="0" max="50" value={settings.maskHeight} onChange={e => setSettings({ ...settings, maskHeight: parseInt(e.target.value) })} className="w-full" />
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-300">
+                                            {/* 核心频率 */}
+                                            <div className="setting-card space-y-4">
+                                                <div className="flex justify-between items-center mb-2">
+                                                    <span className="text-white/60 text-[11px] font-bold uppercase">频率触发逻辑</span>
+                                                    <button
+                                                        onClick={() => setSettings({ ...settings, freqMode: settings.freqMode === 'fixed' ? 'random' : 'fixed' })}
+                                                        className={`px-4 py-1.5 rounded-full text-[10px] font-black tracking-widest uppercase transition-all ${settings.freqMode === 'random' ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/50' : 'bg-white/10 text-white/50'}`}
+                                                    >
+                                                        {settings.freqMode === 'random' ? '随机波动' : '固定频率'}
+                                                    </button>
+                                                </div>
+
+                                                {settings.freqMode === 'fixed' ? (
+                                                    <div className="space-y-3">
+                                                        <div className="flex justify-between">
+                                                            <span className="text-white/40 text-[10px] font-bold">发送间隔 (MS)</span>
+                                                            <span className="text-white text-[10px] font-mono">{settings.messageSpeed}ms</span>
+                                                        </div>
+                                                        <input type="range" min="300" max="3000" step="100" value={settings.messageSpeed} onChange={e => setSettings({ ...settings, messageSpeed: parseInt(e.target.value) })} className="w-full" />
+                                                    </div>
+                                                ) : (
+                                                    <div className="grid grid-cols-1 gap-6">
+                                                        <div className="space-y-3">
+                                                            <div className="flex justify-between">
+                                                                <span className="text-white/40 text-[10px] font-bold uppercase">波动周期范围 (秒)</span>
+                                                                <span className="text-white text-[10px] font-mono">{settings.randomWindowMin} - {settings.randomWindowMax}s</span>
+                                                            </div>
+                                                            <div className="flex gap-4">
+                                                                <input type="range" min="10" max="60" value={settings.randomWindowMin} onChange={e => setSettings({ ...settings, randomWindowMin: parseInt(e.target.value) })} className="flex-1" />
+                                                                <input type="range" min="60" max="300" value={settings.randomWindowMax} onChange={e => setSettings({ ...settings, randomWindowMax: parseInt(e.target.value) })} className="flex-1" />
+                                                            </div>
+                                                        </div>
+                                                        <div className="space-y-3">
+                                                            <div className="flex justify-between">
+                                                                <span className="text-white/40 text-[10px] font-bold uppercase">单周期消息密度</span>
+                                                                <span className="text-white text-[10px] font-mono">{settings.randomCountMin} - {settings.randomCountMax}</span>
+                                                            </div>
+                                                            <div className="flex gap-4">
+                                                                <input type="range" min="1" max="20" value={settings.randomCountMin} onChange={e => setSettings({ ...settings, randomCountMin: parseInt(e.target.value) })} className="flex-1" />
+                                                                <input type="range" min="20" max="100" value={settings.randomCountMax} onChange={e => setSettings({ ...settings, randomCountMax: parseInt(e.target.value) })} className="flex-1" />
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            {/* 生命周期与缓存 */}
+                                            <div className="grid grid-cols-2 gap-4">
+                                                <div className="setting-card">
+                                                    <div className="flex justify-between mb-3">
+                                                        <span className="text-white/60 text-[11px] font-bold uppercase">最大消息数</span>
+                                                        <span className="text-white text-[11px] font-mono">{settings.maxMessages}</span>
+                                                    </div>
+                                                    <input type="range" min="5" max="100" value={settings.maxMessages} onChange={e => setSettings({ ...settings, maxMessages: parseInt(e.target.value) })} className="w-full" />
+                                                </div>
+                                                <div className="setting-card">
+                                                    <div className="flex justify-between mb-3">
+                                                        <span className="text-white/60 text-[11px] font-bold uppercase">自动销毁 (秒)</span>
+                                                        <span className="text-white text-[11px] font-mono">{settings.messageLifetime}s</span>
+                                                    </div>
+                                                    <input type="range" min="5" max="60" value={settings.messageLifetime} onChange={e => setSettings({ ...settings, messageLifetime: parseInt(e.target.value) })} className="w-full" />
+                                                </div>
+                                            </div>
+
+                                            {/* 购买功能 */}
+                                            <div className="setting-card bg-orange-600/10 border-orange-500/20">
+                                                <div className="flex justify-between items-center mb-4">
+                                                    <span className="text-orange-400 text-[11px] font-bold uppercase tracking-widest">正在购买通知</span>
+                                                    <button
+                                                        onClick={() => setSettings({ ...settings, showBuying: !settings.showBuying })}
+                                                        className={`w-12 h-6 rounded-full transition-all relative ${settings.showBuying ? 'bg-orange-600' : 'bg-white/10'}`}
+                                                    >
+                                                        <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${settings.showBuying ? 'right-1' : 'left-1'}`}></div>
+                                                    </button>
+                                                </div>
+                                                <div className="space-y-3">
+                                                    <div className="flex justify-between">
+                                                        <span className="text-white/30 text-[10px] font-bold uppercase">触发概率</span>
+                                                        <span className="text-orange-300 text-[10px] font-bold">{Math.round(settings.buyingProb * 100)}%</span>
+                                                    </div>
+                                                    <input type="range" min="0" max="1" step="0.05" value={settings.buyingProb} onChange={e => setSettings({ ...settings, buyingProb: parseFloat(e.target.value) })} className="w-full accent-orange-500" />
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* 底部操作 */}
+                                <div className="p-8 pt-4 bg-white/5 flex gap-4 border-t border-white/10">
+                                    <button 
+                                        onClick={() => {
+                                            if(confirm('确定要恢复默认设置吗？')) setSettings(DEFAULT_SETTINGS);
+                                        }} 
+                                        className="flex-1 py-4 rounded-2xl bg-white/5 text-white/40 text-[10px] font-black uppercase tracking-widest hover:bg-white/10 hover:text-white transition-all border border-white/5"
+                                    >
+                                        恢复默认设置
+                                    </button>
+                                    <button 
+                                        onClick={() => setIsPlaying(!isPlaying)} 
+                                        className={`flex-1 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest text-white transition-all shadow-2xl ${isPlaying ? 'bg-red-500/80 shadow-red-900/20 hover:bg-red-500' : 'bg-green-600/80 shadow-green-900/20 hover:bg-green-600'}`}
+                                    >
+                                        {isPlaying ? '停止模拟' : '开启模拟'}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+
+</html>
